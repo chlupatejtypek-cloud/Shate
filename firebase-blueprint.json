@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "Message": {
+      "title": "Message",
+      "description": "A single chat message",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["user", "bot"]
+        },
+        "content": {
+          "type": "string",
+          "description": "The text content of the message"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "userId": {
+          "type": "string"
+        }
+      },
+      "required": ["role", "content", "createdAt", "updatedAt", "userId"]
+    },
+    "Chat": {
+       "title": "Chat",
+       "description": "A chat session",
+       "type": "object",
+       "properties": {
+         "userId": { "type": "string" },
+         "createdAt": { "type": "string", "format": "date-time" },
+         "updatedAt": { "type": "string", "format": "date-time" },
+         "title": { "type": "string" }
+       },
+       "required": ["userId", "createdAt", "updatedAt"]
+    },
+    "DailyUsage": {
+      "title": "DailyUsage",
+      "description": "Tracks daily token usage",
+      "type": "object",
+      "properties": {
+        "tokens": { "type": "number" },
+        "date": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}/usage/{usageId}": {
+      "schema": "DailyUsage",
+      "description": "User's daily usage stats"
+    },
+    "/users/{userId}/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "User's chat sessions"
+    },
+    "/users/{userId}/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a specific chat"
+    }
+  }
+}
