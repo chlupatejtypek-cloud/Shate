@@ -45,3 +45,4 @@ posting_cadence: daily
 
 | date | slug | topic | duration |
 |------|------|-------|----------|
+| 2026-09-06 | prune-on-purpose | Why fingers wrinkle in water — the nervous-system (not soaking) explanation | 53.95 s |
