@@ -4,6 +4,16 @@
 # video output (products, not source)
 output/
 
+# relay scratch (step 04 uses a temporary git worktree outside the repo, but just in case)
+relay-request/
+relay/
+
+# media must never land in the repo
+*.mp4
+*.mp3
+*.wav
+*.m4a
+
 # python
 __pycache__/
 *.pyc
