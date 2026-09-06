@@ -86,6 +86,22 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "request: id=$ID start=$START dur=$DUR min_height=$MINH"
 
+      - name: Start bgutil POT provider
+        # YouTube gates GitHub runner IPs with proof-of-origin token checks
+        # (2025-2026). The POT provider generates tokens locally on the runner;
+        # the yt-dlp plugin below picks up http://127.0.0.1:4416 automatically.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q -U bgutil-ytdlp-pot-provider
+          docker rm -f bgutil-pot >/dev/null 2>&1 || true
+          docker run -d --pull always -p 4416:4416 --name bgutil-pot brainicism/bgutil-ytdlp-pot-provider
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/4416) 2>/dev/null; then echo "POT provider up (check $i)"; exit 0; fi
+            sleep 2
+          done
+          echo "::warning::POT provider did not come up; continuing — cookies may still work"
+
       - name: Install ffmpeg + yt-dlp
         shell: bash
         run: |
