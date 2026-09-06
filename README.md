@@ -15,10 +15,11 @@ the system can be improved in isolation, without touching the rest.
 ## How it works (30 seconds)
 
 1. The agent reads this README.
-2. The agent runs the seven pipeline steps in order — one file each, in `steps/`.
+2. The agent runs the eight pipeline steps in order — one file each, in `steps/`.
    The first step selects a channel from `channels/`; every later decision follows
    from that profile.
-3. Result: `output/<video-slug>/final.mp4` + `metadata.md`.
+3. Result: `output/<video-slug>/final.mp4` + `metadata.md` (+ a YouTube upload
+   when step 08 credentials are set up).
 
 There are no modes and no questionnaires. If the human adds a hint (a channel name,
 a topic, a length) the agent honors it; if not, the agent decides — and writes every
@@ -64,7 +65,7 @@ Only when something is **impossible**, not when something is undecided:
 
 State exactly what you tried and what is needed, in one message.
 
-## The pipeline — seven pre-built steps
+## The pipeline — eight pre-built steps
 
 | #  | Step             | File                       | Input                                     | Output                                                 |
 |----|------------------|----------------------------|-------------------------------------------|--------------------------------------------------------|
@@ -75,6 +76,7 @@ State exactly what you tried and what is needed, in one message.
 | 05 | Assembly         | `steps/05-assembly.md`     | `narration.mp3` + `background.mp4`        | `final.mp4`                                            |
 | 06 | Captions         | `steps/06-captions.md`     | `final.mp4` + `timestamps.json`           | `final.mp4` (captions burned in) + `06-captions/` files |
 | 07 | Metadata         | `steps/07-metadata.md`     | `final.mp4` + `script.md` + `brief.md`    | `metadata.md` (title, description, tags, hashtags)     |
+| 08 | Publish          | `steps/08-publish.md`      | `final.mp4` + `metadata.md` + YouTube OAuth | `08-publish/publish.json` (video URL)                |
 
 The pipeline can grow: new step files are inserted in sequence and the files after
 them are renumbered. Improving one step means editing exactly one file.
@@ -106,6 +108,10 @@ What each module does:
   black outline, bottom-centre.
 - **07 — Metadata.** Title, description, tags, hashtags — optimized for the
   algorithm, honest to the video. Also appends the video to the channel's history.
+- **08 — Publish.** Uploads `final.mp4` to YouTube with the step-07 metadata
+  through a second relay workflow (the sandbox cannot reach googleapis.com, the
+  runner can). OAuth consent is a one-time human step; the refresh token only ever
+  crosses git as an AES-encrypted blob whose key never leaves private channels.
 
 ## Repository layout
 
@@ -116,6 +122,8 @@ What each module does:
 | `steps/` | One file per pipeline step: inputs → procedure → quality bar → outputs. To improve a part of the pipeline, edit exactly one file. |
 | `tools/` | Shared helpers the steps name: `make_captions.py` (step 06), `stitch_voiceover.py` (step 03), vendored caption fonts in `tools/fonts/`. |
 | `.github/workflows/download-video.yml` | The **download relay**: a GitHub Actions workflow that fetches and cuts a background video on a GitHub runner and delivers it back through a git branch — for agents whose sandbox cannot reach YouTube. Used by step 04. |
+| `.github/workflows/publish-youtube.yml` | The **upload relay**: authenticates to the YouTube Data API and publishes `final.mp4` from a runner (step 08). Exchange + upload reported back through `publish-result/<id>` branches. |
+| `secrets/` | Git-ignored OAuth material for step 08 (`client_secrets.json`, encrypted token). Nothing usable ever enters git. |
 | `output/` | Finished videos, one folder per video. Output is a **product**, not part of the system — git-ignored, never edit steps from inside it. |
 | `.env` | Optional API keys (git-ignored). Copy from `.env.example`. Nothing here is required. |
 | `keys.env` | Optional **committed** API keys (owner accepted the leak risk, 2026-09-06). Fallback after `.env`; `.env` wins. Only owner-approved keys belong here. |
