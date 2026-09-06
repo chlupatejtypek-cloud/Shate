@@ -21,7 +21,7 @@ cuts the background to it; step 05 assembles to it; step 06 syncs captions to it
 | `script.md` (lines + speaker labels + format + voice mapping) | Output of step 02 |
 | `narration_speed` (optional, default 1.0) | Channel profile → `01-channel/brief.md` |
 | Speech engine | Decided by the rule below — **not by the human** |
-| `ELEVENLABS_API_KEY` (optional) | `.env` |
+| `ELEVENLABS_API_KEY` (optional) | `.env` (fallback: committed `keys.env` — owner-accepted practice, `.env` wins) |
 
 ## Speech engine — which path to take
 

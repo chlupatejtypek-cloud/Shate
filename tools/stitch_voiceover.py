@@ -40,7 +40,10 @@ TEXTS = {
 SECTIONS = [(1, 4, "Hook"), (5, 14, "Body"), (15, 16, "Close")]
 GAP_DIFF = 0.250
 GAP_SAME = 0.120
-LEVEL_CLAMP_DB = 6.0
+LEVEL_CLAMP_LOW_DB = -6.0
+LEVEL_CLAMP_HIGH_DB = 16.0  # short TTS lines sometimes render as whispers; the
+                            # volume-check already forces one regen, after that a
+                            # big digital gain is cleaner than a quiet line
 # Human-requested speed-up (2026-09-06): slight tempo lift for retention.
 # atempo preserves pitch; all timings below are scaled to the post-tempo timeline.
 SPEED = 1.10
@@ -79,7 +82,7 @@ def main() -> int:
     # per-line levelling: target the median RMS, clamp to ±6 dB
     rms = {p: rms_db(p) for p in parts}
     median = statistics.median(v for v in rms.values() if v is not None)
-    gain = {p: max(-LEVEL_CLAMP_DB, min(LEVEL_CLAMP_DB, median - rms[p])) for p in parts}
+    gain = {p: max(LEVEL_CLAMP_LOW_DB, min(LEVEL_CLAMP_HIGH_DB, median - rms[p])) for p in parts}
     for p in parts:
         flag = "" if abs(gain[p]) < 0.5 else f"  gain {gain[p]:+.1f} dB"
         print(f"{p.name}: rms {rms[p]:.1f} dB (median {median:.1f}){flag}")

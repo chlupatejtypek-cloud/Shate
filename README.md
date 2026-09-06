@@ -118,6 +118,7 @@ What each module does:
 | `.github/workflows/download-video.yml` | The **download relay**: a GitHub Actions workflow that fetches and cuts a background video on a GitHub runner and delivers it back through a git branch — for agents whose sandbox cannot reach YouTube. Used by step 04. |
 | `output/` | Finished videos, one folder per video. Output is a **product**, not part of the system — git-ignored, never edit steps from inside it. |
 | `.env` | Optional API keys (git-ignored). Copy from `.env.example`. Nothing here is required. |
+| `keys.env` | Optional **committed** API keys (owner accepted the leak risk, 2026-09-06). Fallback after `.env`; `.env` wins. Only owner-approved keys belong here. |
 
 ## Conventions
 
