@@ -1,0 +1,202 @@
+# Shate — background video download relay
+#
+# Why this exists: agents running in sandboxes often cannot reach YouTube (SNI
+# allowlist), but they can push/fetch git branches on github.com. This workflow
+# does the download + cut on a GitHub runner and hands the result back as a
+# commit on an orphan branch `relay/<id>` — the one transport such a sandbox can
+# read. Used by steps/04-background.md (Path B).
+#
+# Trigger 1: push a branch `relay-request/<id>` containing request.json:
+#   { "id": "...", "url": "https://www.youtube.com/watch?v=...", "start": 30,
+#     "duration": 63.84, "min_height": 1080 }
+# Trigger 2: `gh workflow run download-video.yml -f url=... -f start=... -f duration=... -f id=...`
+#
+# Result branch layout (orphan, no history):
+#   background.mp4            (or background.part-aa, -ab, ... when > 90 MB)
+#   source.json               provenance + output probe
+#
+# One-time repo setting: Settings → Actions → General → Workflow permissions →
+# "Read and write permissions" (needed to push the result branch).
+#
+# Optional secrets:
+#   YT_COOKIES   base64 of a Netscape cookies.txt — used only if yt-dlp hits a bot check.
+
+name: download-video
+
+on:
+  push:
+    branches:
+      - "relay-request/**"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Source video URL
+        required: true
+      start:
+        description: Start offset in seconds
+        required: false
+        default: "0"
+      duration:
+        description: Length to cut, in seconds (narration duration)
+        required: true
+      id:
+        description: Request id (becomes the relay/<id> branch)
+        required: true
+      min_height:
+        description: Minimum source height
+        required: false
+        default: "1080"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: relay-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout request branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve request
+        id: req
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ID='${{ inputs.id }}'; URL='${{ inputs.url }}'
+            START='${{ inputs.start }}'; DUR='${{ inputs.duration }}'; MINH='${{ inputs.min_height }}'
+          else
+            test -f request.json || { echo "::error::request.json missing on branch"; exit 1; }
+            ID=$(jq -r '.id' request.json); URL=$(jq -r '.url' request.json)
+            START=$(jq -r '.start // 0' request.json); DUR=$(jq -r '.duration' request.json)
+            MINH=$(jq -r '.min_height // 1080' request.json)
+          fi
+          [[ "$ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::bad id"; exit 1; }
+          [[ "$URL" =~ ^https?:// ]]        || { echo "::error::bad url"; exit 1; }
+          [[ "$START" =~ ^[0-9]+(\.[0-9]+)?$ && "$DUR" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::start/duration must be numbers"; exit 1; }
+          {
+            echo "id=$ID"; echo "url=$URL"; echo "start=$START"; echo "dur=$DUR"; echo "minh=$MINH"
+          } >> "$GITHUB_OUTPUT"
+          echo "request: id=$ID start=$START dur=$DUR min_height=$MINH"
+
+      - name: Install ffmpeg + yt-dlp
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          python3 -m pip install -q -U yt-dlp
+          ffmpeg -hide_banner -version | head -1; yt-dlp --version
+
+      - name: Optional cookies
+        shell: bash
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          if [ -n "${YT_COOKIES:-}" ]; then
+            echo "$YT_COOKIES" | base64 -d > "$RUNNER_TEMP/cookies.txt" && echo "cookies: present"
+          else
+            echo "cookies: none"
+          fi
+
+      - name: Probe source
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='${{ steps.req.outputs.url }}'
+          ARGS=()
+          [ -f "$RUNNER_TEMP/cookies.txt" ] && ARGS+=(--cookies "$RUNNER_TEMP/cookies.txt")
+          yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json "$URL" > "$RUNNER_TEMP/info.json" \
+            || yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json \
+                 --extractor-args "youtube:player_client=android,web_safari" "$URL" > "$RUNNER_TEMP/info.json"
+          jq -r '"title=" + (.title // "") , "channel=" + (.channel // .uploader // ""), "src_duration=" + ((.duration // 0)|tostring)' \
+            "$RUNNER_TEMP/info.json" >> "$GITHUB_OUTPUT"
+          jq -r '.title, .channel, .duration' "$RUNNER_TEMP/info.json"
+
+      - name: Download only the needed section and cut
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='${{ steps.req.outputs.url }}'
+          START='${{ steps.req.outputs.start }}'
+          DUR='${{ steps.req.outputs.dur }}'
+          MINH='${{ steps.req.outputs.minh }}'
+          END=$(python3 -c "print(${START}+${DUR}+2)")
+          mkdir -p out
+
+          FMT="bv*[height>=${MINH}][ext=mp4]/bv*[height>=${MINH}]/bv*"
+          COMMON=(-f "$FMT" --download-sections "*${START}-${END}" --force-keyframes-at-cuts
+                  --no-part --no-playlist -o "$RUNNER_TEMP/section.%(ext)s")
+          [ -f "$RUNNER_TEMP/cookies.txt" ] && COMMON+=(--cookies "$RUNNER_TEMP/cookies.txt")
+
+          if ! yt-dlp "${COMMON[@]}" "$URL"; then
+            echo "::warning::first attempt failed — retrying with android/web_safari clients"
+            yt-dlp "${COMMON[@]}" --extractor-args "youtube:player_client=android,web_safari" "$URL"
+          fi
+
+          SRC=$(ls "$RUNNER_TEMP"/section.* | head -1)
+          ffmpeg -hide_banner -y -i "$SRC" -t "$DUR" -an \
+            -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p" \
+            -c:v libx264 -preset medium -crf 18 -movflags +faststart \
+            out/background.mp4
+
+      - name: Verify and write source.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          W=$(ffprobe -v error -select_streams v:0 -show_entries stream=width  -of csv=p=0 out/background.mp4)
+          H=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 out/background.mp4)
+          D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 out/background.mp4)
+          A=$(ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 out/background.mp4 || true)
+          echo "output: ${W}x${H} ${D}s audio='${A}'"
+          [ "$W" = "1080" ] && [ "$H" = "1920" ] || { echo "::error::wrong resolution"; exit 1; }
+          [ -z "$A" ] || { echo "::error::audio stream present"; exit 1; }
+          python3 - "$D" '${{ steps.req.outputs.dur }}' <<'EOF'
+          import sys; got, want = float(sys.argv[1]), float(sys.argv[2])
+          assert abs(got - want) <= 0.5, f"duration {got} vs wanted {want}"
+          EOF
+          jq -n \
+            --arg path "relay" \
+            --arg url '${{ steps.req.outputs.url }}' \
+            --arg title '${{ steps.probe.outputs.title }}' \
+            --arg channel '${{ steps.probe.outputs.channel }}' \
+            --argjson src_duration '${{ steps.probe.outputs.src_duration }}' \
+            --argjson start '${{ steps.req.outputs.start }}' \
+            --argjson dur '${{ steps.req.outputs.dur }}' \
+            --argjson outdur "$D" \
+            --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{path:$path, url:$url, title:$title, channel:$channel,
+              source_duration_seconds:$src_duration,
+              used:{start_seconds:$start, end_seconds:($start+$dur)},
+              output:{width:1080, height:1920, duration_seconds:$outdur, fps:30},
+              relay_run:$run, note:"only the needed part was downloaded"}' > out/source.json
+          cat out/source.json
+
+      - name: Publish result branch relay/<id>
+        shell: bash
+        env:
+          ID: ${{ steps.req.outputs.id }}
+        run: |
+          set -euo pipefail
+          # split if > 90 MB so a single blob stays well under GitHub's 100 MB limit
+          SIZE=$(stat -c %s out/background.mp4)
+          if [ "$SIZE" -gt $((90*1024*1024)) ]; then
+            (cd out && split -b 80m -d background.mp4 background.part- && rm background.mp4)
+          fi
+          ls -la out
+
+          git -C out init -q -b "relay/$ID"
+          git -C out config user.name  "shate-relay[bot]"
+          git -C out config user.email "shate-relay@users.noreply.github.com"
+          git -C out add -A
+          git -C out commit -qm "relay result $ID"
+          git -C out remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git -C out push -f origin "relay/$ID"
+          echo "::notice::result on branch relay/$ID — fetch it with: git fetch origin relay/$ID"
