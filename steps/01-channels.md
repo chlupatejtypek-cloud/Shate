@@ -90,7 +90,7 @@ cta:             <…>
 
 ## Rules
 
-- Step 01 **reads** profiles; it never edits an existing one (only step 06 appends
+- Step 01 **reads** profiles; it never edits an existing one (only step 07 appends
   history). The single exception is creating a brand-new profile when none exists.
 - One channel per video. Never blend two profiles.
 - Keep the brief under one screen. Everything downstream should be decidable from it

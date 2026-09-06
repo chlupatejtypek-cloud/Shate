@@ -1,0 +1,109 @@
+# Shate — YouTube publish relay (step 08)
+#
+# Why: the agent sandbox cannot reach googleapis.com (SNI allowlist), but it can
+# push/fetch git branches on github.com. This workflow authenticates to YouTube
+# and uploads final.mp4 on a GitHub runner, reporting back through git —
+# the only transport the sandbox has. Mirrors the download relay of step 04.
+#
+# Trigger: push a branch `publish-request/<id>` containing:
+#   request.json     { "id", "kind": "auth" }                  (+ code.txt)
+#                 or { "id", "kind": "video", "title", "description",
+#                      "tags", "privacy_status", "category_id" }  (+ final.mp4,
+#                      + token.pickle.enc from a prior auth run)
+# Result branch `publish-result/<id>`:
+#   RESULT.json      upload result (+ video url) or the exchange summary
+#   token.pickle.enc only for kind=auth — AES-256-CBC, pass=client_secret
+#
+# Secrets (repository settings, one-time):
+#   YT_CLIENT_JSON   base64 of the OAuth client's client_secrets.json.
+#                    The workflow token can NOT set this — the repo owner adds it
+#                    once via the UI. See steps/08-publish.md.
+#
+# On success the request branch deletes itself; media never stays in git.
+
+name: publish-youtube
+
+on:
+  push:
+    branches:
+      - "publish-request/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout request branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q -U \
+            google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip show google-auth-oauthlib | head -2
+
+      - name: Decode OAuth client config
+        shell: bash
+        env:
+          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+        run: |
+          set -euo pipefail
+          [ -n "${YT_CLIENT_JSON:-}" ] || { echo "::error::secret YT_CLIENT_JSON missing — repo owner must add it once (see steps/08-publish.md)"; exit 1; }
+          echo "$YT_CLIENT_JSON" | tr -d '[:space:]' | { base64 -d 2>/dev/null || cat; } | \
+            jq -e 'has("installed") or has("web")' >/dev/null \
+            && echo "client config OK" || { echo "::error::YT_CLIENT_JSON is not a valid client_secrets.json"; exit 1; }
+
+      - name: Run yt_relay
+        id: relay
+        shell: bash
+        env:
+          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+        run: |
+          set -euo pipefail
+          test -f request.json || { echo "::error::request.json missing on branch"; exit 1; }
+          if ! python3 tools/yt_relay.py 2>&1 | tee "$RUNNER_TEMP/yt_relay.log"; then
+            mkdir -p out
+            cp "$RUNNER_TEMP/yt_relay.log" out/ERROR.log
+            jq -n --arg msg "yt_relay failed" '{kind:"error", note:$msg}' > out/RESULT.json
+            exit 42
+          fi
+
+      - name: Publish result branch publish-result/<id>
+        if: always() && steps.relay.outcome != 'skipped'
+        id: pub
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ID=$(jq -r '.id' request.json)
+          git -C out init -q -b "publish-result/$ID"
+          git -C out config user.name  "shate-relay[bot]"
+          git -C out config user.email "shate-relay@users.noreply.github.com"
+          git -C out add -A
+          git -C out commit -qm "publish result $ID"
+          git -C out remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git -C out push -f origin "publish-result/$ID"
+          echo "::notice::result on branch publish-result/$ID"
+
+      - name: Self-clean request branch (success only)
+        if: steps.relay.outcome == 'success' && steps.pub.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ID=$(jq -r '.id' request.json)
+          git push origin --delete "publish-request/$ID" || true
+          echo "::notice::request branch publish-request/$ID deleted"

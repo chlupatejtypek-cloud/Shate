@@ -1,5 +1,8 @@
 # secrets
 .env
+secrets/
+*.pickle
+client_secrets*.json
 
 # video output (products, not source)
 output/
