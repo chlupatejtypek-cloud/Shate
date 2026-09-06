@@ -130,17 +130,19 @@ jobs:
           ARGS=()
           [ -f "$RUNNER_TEMP/cookies.txt" ] && ARGS+=(--cookies "$RUNNER_TEMP/cookies.txt")
           yt_ok=""
+          LOG="$RUNNER_TEMP/yt-dlp.log"; : > "$LOG"
           CLIENT_ARGS=("" "youtube:player_client=android,web_safari" "youtube:player_client=ios" "youtube:player_client=web_embedded,tv_embedded" "youtube:player_client=mweb,tv_embedded")
           for A in "${CLIENT_ARGS[@]}"; do
             echo "::notice::probe attempt player_client='${A:-default}'"
+            echo "=== probe player_client='${A:-default}' ===" >> "$LOG"
             if [ -z "$A" ]; then
-              yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json "$URL" > "$RUNNER_TEMP/info.json" && { yt_ok=1; break; }
+              yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json "$URL" > "$RUNNER_TEMP/info.json" 2>>"$LOG" && { yt_ok=1; break; }
             else
               yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json \
-                --extractor-args "$A" "$URL" > "$RUNNER_TEMP/info.json" && { yt_ok=1; break; }
+                --extractor-args "$A" "$URL" > "$RUNNER_TEMP/info.json" 2>>"$LOG" && { yt_ok=1; break; }
             fi
           done
-          [ -n "$yt_ok" ] || { echo "::error::probe failed for all player clients"; exit 1; }
+          [ -n "$yt_ok" ] || { echo "::error::probe failed for all player clients (log in relay-fail branch)"; exit 1; }
           jq -r '"title=" + (.title // "") , "channel=" + (.channel // .uploader // ""), "src_duration=" + ((.duration // 0)|tostring)' \
             "$RUNNER_TEMP/info.json" >> "$GITHUB_OUTPUT"
           jq -r '.title, .channel, .duration' "$RUNNER_TEMP/info.json"
@@ -162,15 +164,17 @@ jobs:
           [ -f "$RUNNER_TEMP/cookies.txt" ] && COMMON+=(--cookies "$RUNNER_TEMP/cookies.txt")
 
           dl_ok=""
+          LOG="$RUNNER_TEMP/yt-dlp.log"
           for A in "" "youtube:player_client=android,web_safari" "youtube:player_client=ios" "youtube:player_client=web_embedded,tv_embedded" "youtube:player_client=mweb,tv_embedded"; do
             echo "::notice::download attempt player_client='${A:-default}'"
+            echo "=== download player_client='${A:-default}' ===" >> "$LOG"
             if [ -z "$A" ]; then
-              yt-dlp "${COMMON[@]}" "$URL" && { dl_ok=1; break; }
+              yt-dlp "${COMMON[@]}" "$URL" 2>>"$LOG" && { dl_ok=1; break; }
             else
-              yt-dlp "${COMMON[@]}" --extractor-args "$A" "$URL" && { dl_ok=1; break; }
+              yt-dlp "${COMMON[@]}" --extractor-args "$A" "$URL" 2>>"$LOG" && { dl_ok=1; break; }
             fi
           done
-          [ -n "$dl_ok" ] || { echo "::error::download failed for all player clients"; exit 1; }
+          [ -n "$dl_ok" ] || { echo "::error::download failed for all player clients (log in relay-fail branch)"; exit 1; }
 
           SRC=$(ls "$RUNNER_TEMP"/section.* | head -1)
           ffmpeg -hide_banner -y -i "$SRC" -t "$DUR" -an \
@@ -209,6 +213,30 @@ jobs:
               output:{width:1080, height:1920, duration_seconds:$outdur, fps:30},
               relay_run:$run, note:"only the needed part was downloaded"}' > out/source.json
           cat out/source.json
+
+      - name: Publish failure log branch relay-fail/<id>
+        # The sandbox that consumes the relay cannot read Actions logs (CDN is
+        # its blocked host list) — git branches are the only channel it has.
+        if: failure()
+        shell: bash
+        env:
+          ID: ${{ steps.req.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p outlog
+          cp "$RUNNER_TEMP/yt-dlp.log" outlog/yt-dlp-log.txt 2>/dev/null || echo "(no yt-dlp log captured)" > outlog/yt-dlp-log.txt
+          {
+            echo "relay failure log $ID"
+            echo "run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > outlog/RUN.txt
+          git -C outlog init -q -b "relay-fail/$ID"
+          git -C outlog config user.name  "shate-relay[bot]"
+          git -C outlog config user.email "shate-relay@users.noreply.github.com"
+          git -C outlog add -A
+          git -C outlog commit -qm "relay failure log $ID"
+          git -C outlog remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git -C outlog push -f origin "relay-fail/$ID"
+          echo "::notice::failure log on branch relay-fail/$ID — delete after reading"
 
       - name: Publish result branch relay/<id>
         shell: bash
