@@ -1,8 +1,10 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
+# secrets
+.env
+
+# video output (products, not source)
+output/
+
+# python
+__pycache__/
+*.pyc
+.venv/
