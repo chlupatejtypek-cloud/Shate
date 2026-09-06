@@ -55,8 +55,9 @@ Notes:
 - The background is already 1080×1920; the `scale/crop` filter is a no-op safety
   net, not a substitute for step 04.
 - Keep CRF 18 — Shorts/TikTok re-encode anyway; give them a clean master.
-- **No captions, no music, no overlays in this step.** They are future step modules
-  (insert after 05, renumber). Assembly stays a pure mux.
+- **No captions, no music, no overlays in this step.** Captions live in step 06
+  (`steps/06-captions.md`); music/overlays are future modules (insert after 06,
+  renumber). Assembly stays a pure mux.
 
 ### 3. Verify
 

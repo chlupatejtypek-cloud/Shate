@@ -18,6 +18,7 @@ tone:            curious, punchy, warm, a little cheeky, never condescending
 hook_style:      open mid-argument or with a claim that sounds wrong ("Your microwave has a blind spot — and it's on purpose.")
 background:      subway-surfers
 cta:             one short loop-back line ("Now go check yours.") — no "like and subscribe"
+narration_speed: 1.1   # human 2026-09-06: slight tempo lift keeps Shorts retention up; step 03 applies atempo + rescales timestamps
 posting_cadence: daily
 ```
 

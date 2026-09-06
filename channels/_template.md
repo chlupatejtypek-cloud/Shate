@@ -3,7 +3,7 @@
 <!--
 Copy this file to channels/<slug>.md (kebab-case). Fill in every field in the
 header block — step 01 reads them verbatim. Keep free-text sections short: this is
-a profile, not an essay. The `history` section is appended by step 06 after every
+a profile, not an essay. The `history` section is appended by step 07 after every
 video; never edit it by hand except to remove entries.
 -->
 
@@ -23,6 +23,7 @@ tone:            <3-5 adjectives — e.g. curious, punchy, slightly irreverent>
 hook_style:      <how videos on this channel open — e.g. "bold claim, no greeting">
 background:      <default satisfying-footage category — e.g. subway-surfers, slime, hydraulic-press>
 cta:             <closing line pattern, or "none">
+narration_speed: 1.0                        # optional tempo lift, 1.05–1.15 is the sane range
 posting_cadence: <e.g. daily / 3x week — informational only>
 ```
 
@@ -50,7 +51,7 @@ uses them for the teardown. Leave empty if none — the agent will find comparab
 
 ## History
 
-<!-- Appended automatically by step 06. Newest at the bottom. One line per video:
+<!-- Appended automatically by step 07. Newest at the bottom. One line per video:
 date | slug | topic | duration. Step 02 must not reuse a topic listed here. -->
 
 | date | slug | topic | duration |

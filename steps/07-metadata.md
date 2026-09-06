@@ -1,6 +1,7 @@
-# Step 06 — Metadata
+# Step 07 — Metadata
 
-> Pipeline step **06 of 6**. Self-contained: read this whole file, do the work,
+> Pipeline step **07 of 7** (renumbered 2026-09-06 when step 06 — Captions was
+> inserted). Self-contained: read this whole file, do the work,
 > verify the Definition of Done, then report to the human.
 
 ## What you produce
