@@ -209,7 +209,7 @@ Two different causes, two different fixes — read the log line, do not guess:
 
 | Log says | Cause | Fix |
 |----------|-------|-----|
-| `Sign in to confirm you're not a bot` | YouTube requires a **PO token** (proof-of-origin) for this client / the runner's IP is flagged | The workflow already retries with `player_client=android,web_safari`. Next: install the bgutil POT provider plugin (`pip install bgutil-ytdlp-pot-provider`, needs Node/Deno on the runner) or provide cookies via a `YT_COOKIES` repository secret (Netscape format, base64) — the workflow picks both up automatically if present. |
+| `Sign in to confirm you're not a bot` | YouTube requires a **PO token** (proof-of-origin) for this client / the runner's IP is flagged | The workflow walks a client ladder automatically: default → `android,web_safari` → `ios` → `web_embedded,tv_embedded` → `mweb,tv_embedded`. If all fail: install the bgutil POT provider plugin (`pip install bgutil-ytdlp-pot-provider`, needs Node/Deno on the runner) or provide cookies via a `YT_COOKIES` repository secret (Netscape format, base64) — the workflow picks both up automatically if present. |
 | `HTTP Error 429: Too Many Requests` | Rate-limited: too many requests from GitHub's shared runner IP range | Wait 10–15 min and re-push the request, or switch to a different source URL. Do not loop retries — it makes it worse. |
 | `Requested format is not available` | Source has no ≥1080p video-only stream | Pick another source, or set `"min_height": 720` in `request.json`. |
 | `Video unavailable` / geo block | Source not accessible from the runner's region (US) | Pick another source. |

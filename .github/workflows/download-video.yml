@@ -113,9 +113,18 @@ jobs:
           URL='${{ steps.req.outputs.url }}'
           ARGS=()
           [ -f "$RUNNER_TEMP/cookies.txt" ] && ARGS+=(--cookies "$RUNNER_TEMP/cookies.txt")
-          yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json "$URL" > "$RUNNER_TEMP/info.json" \
-            || yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json \
-                 --extractor-args "youtube:player_client=android,web_safari" "$URL" > "$RUNNER_TEMP/info.json"
+          yt_ok=""
+          CLIENT_ARGS=("" "youtube:player_client=android,web_safari" "youtube:player_client=ios" "youtube:player_client=web_embedded,tv_embedded" "youtube:player_client=mweb,tv_embedded")
+          for A in "${CLIENT_ARGS[@]}"; do
+            echo "::notice::probe attempt player_client='${A:-default}'"
+            if [ -z "$A" ]; then
+              yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json "$URL" > "$RUNNER_TEMP/info.json" && { yt_ok=1; break; }
+            else
+              yt-dlp "${ARGS[@]}" --no-warnings --skip-download --print-json \
+                --extractor-args "$A" "$URL" > "$RUNNER_TEMP/info.json" && { yt_ok=1; break; }
+            fi
+          done
+          [ -n "$yt_ok" ] || { echo "::error::probe failed for all player clients"; exit 1; }
           jq -r '"title=" + (.title // "") , "channel=" + (.channel // .uploader // ""), "src_duration=" + ((.duration // 0)|tostring)' \
             "$RUNNER_TEMP/info.json" >> "$GITHUB_OUTPUT"
           jq -r '.title, .channel, .duration' "$RUNNER_TEMP/info.json"
@@ -136,10 +145,16 @@ jobs:
                   --no-part --no-playlist -o "$RUNNER_TEMP/section.%(ext)s")
           [ -f "$RUNNER_TEMP/cookies.txt" ] && COMMON+=(--cookies "$RUNNER_TEMP/cookies.txt")
 
-          if ! yt-dlp "${COMMON[@]}" "$URL"; then
-            echo "::warning::first attempt failed — retrying with android/web_safari clients"
-            yt-dlp "${COMMON[@]}" --extractor-args "youtube:player_client=android,web_safari" "$URL"
-          fi
+          dl_ok=""
+          for A in "" "youtube:player_client=android,web_safari" "youtube:player_client=ios" "youtube:player_client=web_embedded,tv_embedded" "youtube:player_client=mweb,tv_embedded"; do
+            echo "::notice::download attempt player_client='${A:-default}'"
+            if [ -z "$A" ]; then
+              yt-dlp "${COMMON[@]}" "$URL" && { dl_ok=1; break; }
+            else
+              yt-dlp "${COMMON[@]}" --extractor-args "$A" "$URL" && { dl_ok=1; break; }
+            fi
+          done
+          [ -n "$dl_ok" ] || { echo "::error::download failed for all player clients"; exit 1; }
 
           SRC=$(ls "$RUNNER_TEMP"/section.* | head -1)
           ffmpeg -hide_banner -y -i "$SRC" -t "$DUR" -an \
